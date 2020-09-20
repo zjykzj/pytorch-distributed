@@ -35,7 +35,7 @@
 
 ## 安装
 
-通过requirements.txt安装运行所需依赖
+通过`requirements.txt`安装运行所需依赖
 
 ```
 $ pip install -r requirements.txt
