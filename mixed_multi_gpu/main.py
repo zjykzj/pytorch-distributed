@@ -27,6 +27,7 @@ def train(gpu, args):
     dist.init_process_group(backend='nccl', init_method='env://', world_size=args.world_size, rank=rank)
     torch.manual_seed(0)
 
+    torch.cuda.set_device(gpu)
     device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
     model = ConvNet().to(device)
     # Wrap the model

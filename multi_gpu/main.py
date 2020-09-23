@@ -24,12 +24,15 @@ def train(gpu, args):
     dist.init_process_group(backend='nccl', init_method='env://', world_size=args.world_size, rank=rank)
     torch.manual_seed(0)
 
+    torch.cuda.set_device(gpu)
     device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
+    # model = ConvNet().cuda(gpu)
     model = ConvNet().to(device)
     # Wrap the model
     model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
     # define loss function (criterion) and optimizer
+    # criterion = nn.CrossEntropyLoss().cuda(gpu)
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(model.parameters(), 1e-4)
 
@@ -40,7 +43,9 @@ def train(gpu, args):
     total_step = len(data_loader)
     for epoch in range(args.epochs):
         for i, (images, labels) in enumerate(data_loader):
+            # images = images.cuda(non_blocking=True)
             images = images.to(device)
+            # labels = labels.cuda(non_blocking=True)
             labels = labels.to(device)
             # Forward pass
             outputs = model(images)
