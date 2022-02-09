@@ -12,11 +12,28 @@ import argparse
 import torch
 import torch.nn as nn
 
-from single_gpu.model import ConvNet
-from single_gpu.data import build_dataloader
+from model import ConvNet
+from data import build_dataloader
+
+from engine import train_epoch, test_epoch
 
 
-def train(gpu, args):
+def load_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+                        help='input batch size for training (default: 64)')
+    parser.add_argument('--test-batch-size', type=int, default=64, metavar='N',
+                        help='input batch size for testing (default: 64)')
+    parser.add_argument('-e', '--epochs', default=2, type=int, metavar='N',
+                        help='number of total epochs to run (default: 2)')
+    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                        help='how many batches to wait before logging training status (default: 10)')
+    parser.add_argument('--dry-run', action='store_true', default=False,
+                        help='quickly check a single pass (default: true)')
+    return parser.parse_args()
+
+
+def process(gpu, args):
     device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
     model = ConvNet().to(device)
 
@@ -25,36 +42,25 @@ def train(gpu, args):
     optimizer = torch.optim.SGD(model.parameters(), 1e-4)
 
     # Data loading code
-    data_loader = build_dataloader()
+    train_data_loader = build_dataloader(args, train=True)
+    test_data_loader = build_dataloader(args, train=False)
 
     start = datetime.now()
-    total_step = len(data_loader)
     for epoch in range(args.epochs):
-        for i, (images, labels) in enumerate(data_loader):
-            images = images.to(device)
-            labels = labels.to(device)
-            # Forward pass
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+        epoch_start = datetime.now()
+        train_epoch(epoch, args, model, device, train_data_loader, optimizer, criterion)
+        print("Training one epoch in: " + str(datetime.now() - epoch_start))
 
-            # Backward and optimize
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+    print("Training complete in: " + str(datetime.now() - start))
 
-            if (i + 1) % 100 == 0 and gpu == 0:
-                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, args.epochs, i + 1, total_step,
-                                                                         loss.item()))
-    if gpu == 0:
-        print("Training complete in: " + str(datetime.now() - start))
+    start = datetime.now()
+    test_epoch(model, device, test_data_loader, criterion)
+    print("Training one epoch in: " + str(datetime.now() - start))
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-e', '--epochs', default=2, type=int, metavar='N',
-                        help='number of total epochs to run (default: 2)')
-    args = parser.parse_args()
-    train(0, args)
+    args = load_args()
+    process(0, args)
 
 
 if __name__ == '__main__':

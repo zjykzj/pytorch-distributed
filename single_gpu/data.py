@@ -20,19 +20,19 @@ def build_transform():
     return transform
 
 
-def build_dataset(root, transform=None):
-    data_set = datasets.MNIST(root, train=True, transform=transform, download=True)
+def build_dataset(root, transform=None, is_train=True):
+    data_set = datasets.MNIST(root, train=is_train, transform=transform, download=True)
 
     return data_set
 
 
-def build_dataloader():
+def build_dataloader(args, train=True):
     transform = build_transform()
-    data_set = build_dataset('./data', transform=transform)
+    data_set = build_dataset('./data', transform=transform, is_train=train)
 
     data_loader = DataLoader(dataset=data_set,
-                             batch_size=64,
-                             shuffle=True,
+                             batch_size=args.batch_size if train else args.test_batch_size,
+                             shuffle=True if train else False,
                              num_workers=0,
                              pin_memory=True)
 
