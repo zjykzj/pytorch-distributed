@@ -55,6 +55,7 @@ $ pip install -r requirements.txt
 
 ## 致谢
 
+* [examples/mnist_hogwild](https://github.com/pytorch/examples/tree/master/mnist_hogwild)
 * [Distributed data parallel training in Pytorch](https://yangkky.github.io/2019/07/08/distributed-pytorch-tutorial.html)
 * [tczhangzhi/pytorch-distributed](https://github.com/tczhangzhi/pytorch-distributed)
 
