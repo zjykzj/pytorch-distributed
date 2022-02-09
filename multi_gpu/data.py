@@ -21,8 +21,8 @@ def build_transform():
     return transform
 
 
-def build_dataset(root, transform=None):
-    data_set = datasets.MNIST(root, train=True, transform=transform, download=True)
+def build_dataset(root, transform=None, is_train=True):
+    data_set = datasets.MNIST(root, train=is_train, transform=transform, download=True)
 
     return data_set
 
@@ -34,14 +34,13 @@ def build_sampler(data_set, world_size, rank):
     return sampler
 
 
-def build_dataloader(world_size, rank):
+def build_dataloader(args, train=True, world_size=1, rank=0):
     transform = build_transform()
-    data_set = build_dataset('./data', transform=transform)
+    data_set = build_dataset('./data', transform=transform, is_train=train)
 
     sampler = build_sampler(data_set, world_size, rank)
     data_loader = DataLoader(dataset=data_set,
-                             batch_size=64,
-                             shuffle=False,
+                             batch_size=args.batch_size if train else args.test_batch_size,
                              num_workers=0,
                              pin_memory=True,
                              sampler=sampler)

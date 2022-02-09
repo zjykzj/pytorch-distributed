@@ -4,32 +4,53 @@
 @date: 2020/9/14 下午8:36
 @file: main.py
 @author: zj
-@description: 
+@description:
+refer to
+1. [PyTorch Distributed Training](https://leimao.github.io/blog/PyTorch-Distributed-Training/)
+2. [PyTorch Distributed Evaluation](https://leimao.github.io/blog/PyTorch-Distributed-Evaluation/)
 """
 
-import os
 from datetime import datetime
 import argparse
 import torch
 import torch.nn as nn
-import torch.multiprocessing as mp
 import torch.distributed as dist
 
-from multi_gpu.model import ConvNet
-from multi_gpu.data import build_dataloader
+from model import ConvNet
+from data import build_dataloader
+from engine import train_epoch, test_epoch
 
 
-def train(gpu, args):
-    rank = args.nr * args.gpus + gpu
-    dist.init_process_group(backend='nccl', init_method='env://', world_size=args.world_size, rank=rank)
-    torch.manual_seed(0)
+def load_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--local_rank", default=0, type=int,
+                        help='Local rank. Necessary for using the torch.distributed.launch utility. (default: 0)')
+    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+                        help='input batch size for training (default: 64)')
+    parser.add_argument('--test-batch-size', type=int, default=64, metavar='N',
+                        help='input batch size for testing (default: 64)')
+    parser.add_argument('-e', '--epochs', default=2, type=int, metavar='N',
+                        help='number of total epochs to run (default: 2)')
+    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                        help='how many batches to wait before logging training status (default: 10)')
+    parser.add_argument('--dry-run', action='store_true', default=False,
+                        help='quickly check a single pass (default: true)')
 
-    torch.cuda.set_device(gpu)
-    device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
-    # model = ConvNet().cuda(gpu)
+    return parser.parse_args()
+
+
+def process(args):
+    dist.init_process_group(backend='nccl', rank=args.local_rank)
+    torch.manual_seed(args.local_rank)
+    assert args.local_rank == dist.get_rank()
+    local_rank = dist.get_rank()
+    world_size = dist.get_world_size()
+
+    device = torch.device(local_rank)
+    print(local_rank, device, world_size)
     model = ConvNet().to(device)
     # Wrap the model
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
+    model = nn.parallel.DistributedDataParallel(model)
 
     # define loss function (criterion) and optimizer
     # criterion = nn.CrossEntropyLoss().cuda(gpu)
@@ -37,48 +58,28 @@ def train(gpu, args):
     optimizer = torch.optim.SGD(model.parameters(), 1e-4)
 
     # Data loading code
-    data_loader = build_dataloader(world_size=args.world_size, rank=rank)
+    train_data_loader = build_dataloader(args, train=True, world_size=world_size, rank=local_rank)
+    test_data_loader = build_dataloader(args, train=False, world_size=world_size, rank=local_rank)
 
     start = datetime.now()
-    total_step = len(data_loader)
     for epoch in range(args.epochs):
-        for i, (images, labels) in enumerate(data_loader):
-            # images = images.cuda(non_blocking=True)
-            images = images.to(device)
-            # labels = labels.cuda(non_blocking=True)
-            labels = labels.to(device)
-            # Forward pass
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+        epoch_start = datetime.now()
+        train_epoch(epoch, args, model, device, train_data_loader, optimizer, criterion)
+        if local_rank == 0:
+            print("Training one epoch in: " + str(datetime.now() - epoch_start))
 
-            # Backward and optimize
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            if (i + 1) % 100 == 0 and gpu == 0:
-                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, args.epochs, i + 1, total_step,
-                                                                         loss.item()))
-    if gpu == 0:
+    if local_rank == 0:
         print("Training complete in: " + str(datetime.now() - start))
+
+    start = datetime.now()
+    test_epoch(model, device, test_data_loader, criterion)
+    if local_rank == 0:
+        print("Training one epoch in: " + str(datetime.now() - start))
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-g', '--gpus', default=1, type=int,
-                        help='number of gpus per node (default: 1)')
-    parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N',
-                        help='number of machines (default: 1)')
-    parser.add_argument('-nr', '--nr', default=0, type=int,
-                        help='ranking within the nodes (default: 0)')
-    parser.add_argument('-e', '--epochs', default=2, type=int, metavar='N',
-                        help='number of total epochs to run (default: 2)')
-    args = parser.parse_args()
-    # train(0, args)
-    args.world_size = args.gpus * args.nodes
-    os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = '18888'
-    mp.spawn(train, nprocs=args.gpus, args=(args,))
+    args = load_args()
+    process(args)
 
 
 if __name__ == '__main__':
